@@ -1,2 +1,2 @@
 # 4420-Final-Project
-Compilation of codes and sources used in our project!
+Compilation of code and sources used in our project!
