@@ -1,0 +1,148 @@
+---
+title: "DS4420_CustomerChurn"
+author: "Amanda Ashmore"
+date: "2025-11-29"
+output: html_document
+---
+
+# 1: imports and loading data
+```{r setup, message=FALSE}
+library(keras3)
+library(dplyr)
+
+telco <- read.csv("customerchurndata.csv", stringsAsFactors = FALSE)
+```
+
+# 2: loading and preprocessing 
+```{r}
+# removing customer ID col
+if ("customerID" %in% names(telco)) {
+  telco <- telco %>% select(-customerID)
+}
+
+# converting total charges to numeric, removing rows where failed
+if ("TotalCharges" %in% names(telco)) {
+  telco$TotalCharges <- suppressWarnings(as.numeric(telco$TotalCharges))
+  telco <- telco %>% filter(!is.na(TotalCharges))
+}
+
+# converting churn outcome to binary
+telco$Churn <- ifelse(telco$Churn == "Yes", 1, 0)
+
+# saving target variable and removing from dataset
+y <- telco$Churn
+telco <- telco %>% select(-Churn)
+
+# turning categorical variables into dummy variables
+X <- model.matrix(~ . - 1, data = telco)
+
+X <- scale(X)
+```
+
+# 3: train/test
+```{r}
+set.seed(4420)
+
+n <- nrow(X)
+train_idx <- sample(1:n, size = 0.8 * n)
+
+X_train <- X[train_idx, ]
+X_test  <- X[-train_idx, ]
+y_train <- y[train_idx]
+y_test  <- y[-train_idx]
+```
+
+# 4: reshaping for CNN
+```{r}
+num_features <- ncol(X_train)
+
+# 3D array for CNN
+X_train_array <- array(as.numeric(X_train),
+                       dim = c(nrow(X_train), num_features, 1))
+X_test_array  <- array(as.numeric(X_test),
+                       dim = c(nrow(X_test),  num_features, 1))
+```
+
+# 5: defining deeper model
+```{r}
+# input layer shaped like feature array
+inputs <- layer_input(shape = c(num_features, 1))
+
+# convolutional layers
+x <- inputs %>%
+  
+  # first- basic patterns
+  layer_conv_1d(filters = 32, kernel_size = 3, activation = "relu") %>%
+  layer_batch_normalization() %>%
+  
+  # second- more detailed
+  layer_conv_1d(filters = 64, kernel_size = 3, activation = "relu") %>%
+  layer_max_pooling_1d(pool_size = 2) %>%
+  layer_dropout(rate = 0.3) %>%
+  
+  # third- deeper feature learning
+  layer_conv_1d(filters = 128, kernel_size = 3, activation = "relu") %>%
+  layer_batch_normalization() %>%
+  
+  # compressing maps into one vector
+  layer_global_average_pooling_1d() %>%
+  
+  # dense layer combines all
+  layer_dense(units = 64, activation = "relu") %>%
+  layer_dropout(rate = 0.3)
+
+# Outputs churn probabilty
+outputs <- x %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+# model object
+deep_cnn_model <- keras_model(inputs = inputs, outputs = outputs)
+```
+
+# 6: compiling
+```{r}
+# defining optimizer, what to measure and to track
+deep_cnn_model %>% compile(
+  optimizer = "adam",
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+
+deep_cnn_model
+```
+
+# 7: training
+```{r}
+# fitting model to training data
+history_deep_cnn <- deep_cnn_model %>% fit(
+  x = X_train_array,
+  y = y_train,
+  epochs = 20,      
+  batch_size = 64,
+  validation_split = 0.2,  
+  verbose = 1
+)
+
+plot(history_deep_cnn)
+```
+
+# 8: Evaluating performance
+```{r}
+# accuracy on test set
+deep_cnn_model %>% evaluate(X_test_array, y_test)
+
+# predicted churn probabilities
+y_prob <- deep_cnn_model %>% predict(X_test_array)
+
+# turning probabilities into predicted classes
+y_pred_class <- ifelse(y_prob > 0.5, 1, 0)
+
+# compare predictions to actual values
+table(
+  Actual = y_test,
+  Predicted = y_pred_class
+)
+```
+
+
+
