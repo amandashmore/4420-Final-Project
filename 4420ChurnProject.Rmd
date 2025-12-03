@@ -9,6 +9,8 @@ output: html_document
 ```{r setup, message=FALSE}
 library(keras3)
 library(dplyr)
+library(ggplot2)
+library(tidyverse)
 
 telco <- read.csv("customerchurndata.csv", stringsAsFactors = FALSE)
 ```
@@ -35,8 +37,6 @@ telco <- telco %>% select(-Churn)
 
 # turning categorical variables into dummy variables
 X <- model.matrix(~ . - 1, data = telco)
-
-X <- scale(X)
 ```
 
 # 3: train/test
@@ -50,6 +50,16 @@ X_train <- X[train_idx, ]
 X_test  <- X[-train_idx, ]
 y_train <- y[train_idx]
 y_test  <- y[-train_idx]
+
+# columnwise mans and sd on training data
+train_means <- apply(X_train, 2, mean)
+train_sds   <- apply(X_train, 2, sd)
+
+# scaling training data
+X_train <- scale(X_train, center = train_means, scale = train_sds)
+
+# same transformation on test data using traning means and sds
+X_test  <- scale(X_test,  center = train_means, scale = train_sds)
 ```
 
 # 4: reshaping for CNN
@@ -142,6 +152,22 @@ table(
   Actual = y_test,
   Predicted = y_pred_class
 )
+```
+
+# 9: Probability density visualization
+```{r}
+# converting to data frame
+df <- data.frame(prob = as.numeric(y_prob),
+                 actual = factor(y_test, labels = c("No Churn", "Churn")))
+
+# generating
+ggplot(df, aes(x = prob, fill = actual)) +
+  geom_density(alpha = 0.6) +
+  labs(title = "Distribution of Predicted Churn Probabilities",
+       x = "Predicted Probability",
+       y = "Density",
+       fill = "Actual Status") +
+  theme_minimal(base_size = 10)
 ```
 
 
